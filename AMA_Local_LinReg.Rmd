@@ -55,8 +55,8 @@ $\sigma^2(x)$ is as follows:
 
 **1. Fit a nonparametric regression to data $(x_i, y_i)$ and save the estimated values $\hat{m}(x_i)$.**
 
+**Cross-Validation function**
 ```{r}
-## Function in ATENEA to get loo-cv
 h.cv.gcv <- function(x,y,h.v = exp(seq(log(diff(range(x))/20),
                                        log(diff(range(x))/4),l=10)), 
                      p=1,type.kernel="normal"){
@@ -76,24 +76,18 @@ h.cv.gcv <- function(x,y,h.v = exp(seq(log(diff(range(x))/20),
   }
   return(list(h.v=h.v,cv=cv,gcv=gcv))
 }
+```
 
+# Bandwidth Selection via Leave-One-Out Cross-Validation
+```{r}
 cv.res <- h.cv.gcv(Yr, lgWeight, type.kernel="normal")
 h_cv <- cv.res$h.v[which.min(cv.res$cv)]
 min_cv_error <- min(cv.res$cv)
 ```
 
 
-
-```{r echo=FALSE}
-# Plot CV curve
-# plot(cv.res$h.v, cv.res$cv, type="b", log="x", main="LOOCV", xlab="h", ylab="CV error")
-```
-
-# Bandwidth Selection via Leave-One-Out Cross-Validation
 ```{r echo=FALSE, warning=FALSE}
-
 library(ggplot2)
-
 
 # 1. Put your results into a data frame
 cv_data <- data.frame(
@@ -153,6 +147,11 @@ cat(result_string)
 m_hat <- locpolreg(Yr, lgWeight, h=h_cv, q=1, tg=seq(min(Yr),max(Yr),length=200))
 ```
 
+
+
+
+
+
 This plot displays the local linear regression fit (solid black line) over the raw data (grey circles). The smooth curve effectively captures the non-linear trend in the data.
 
 
@@ -164,24 +163,23 @@ eps_hat <- lgWeight - locpolreg(Yr, lgWeight, h=h_cv, q=1, r=0, tg=Yr)$mtgr
 z <- log(eps_hat^2)
 ```
 
-3. Fit a nonparametric regression to data $(x_i, z_i)$ and call the estimated function $\hat{q}(x)$. Observe that $\hat{q}(x)$ is an estimate of $log(\sigma^2(x))$.
+**3. Fit a nonparametric regression to data $(x_i, z_i)$ and call the estimated function $\hat{q}(x)$. Observe that $\hat{q}(x)$ is an estimate of $log(\sigma^2(x))$.**
 
-```{r}
-# Select bandwidth for z_i regression by LOOCV again
-cv.res.var <- h.cv.gcv(Yr, z, type.kernel="normal")
-
-# Plot CV curve for variance regression
-plot(cv.res.var$h.v, cv.res.var$cv, type="b", log="x",
-     main="LOOCV for log(residual^2)", xlab="h", ylab="CV error")
-
-# Optimal bandwidth for q-hat(x)
-h_cv2 <- cv.res.var$h.v[which.min(cv.res.var$cv)]
-h_cv2
+```{r echo=FALSE}
+# # Select bandwidth for z_i regression by LOOCV again
+# cv.res.var <- h.cv.gcv(Yr, z, type.kernel="normal")
+# 
+# # Plot CV curve for variance regression
+# plot(cv.res.var$h.v, cv.res.var$cv, type="b", log="x",
+#      main="LOOCV for log(residual^2)", xlab="h", ylab="CV error")
+# 
+# # Optimal bandwidth for q-hat(x)
+# h_cv2 <- cv.res.var$h.v[which.min(cv.res.var$cv)]
+# h_cv2
 ```
 
 
-```{r}
-
+```{r echo=FALSE}
 cv.res.var <- h.cv.gcv(Yr, z, type.kernel="normal")
 h_cv2 <- cv.res.var$h.v[which.min(cv.res.var$cv)]
 min_cv_error_var <- min(cv.res.var$cv)
@@ -199,7 +197,6 @@ plot(cv.res.var$h.v, cv.res.var$cv,
      pch = 19,            # Use solid circles
      col = "gray40")
 
-# --- Key Additions ---
 
 # 1. Add a vertical line at the optimal h
 abline(v = h_cv2, 
@@ -231,6 +228,11 @@ legend("topright",
 par(mar = c(5.1, 4.1, 4.1, 2.1), family = "")
 ```
 
+```{r echo=FALSE, results='asis'}
+result_string <- sprintf("The optimal bandwidth for q-hat(x) selected by LOOCV is h = %.4f.", h_cv2)
+cat(result_string)
+```
+
 ```{r}
 # Define evaluation grid for smooth plots
 tg <- seq(min(Yr), max(Yr), length=200)
@@ -240,7 +242,7 @@ q_hat_result <- locpolreg(Yr, z, h=h_cv2, q=1, r=0, tg=tg, type.kernel="normal")
 q_hat <- q_hat_result$mtgr
 ```
 
-4. Estimate $\sigma^2(x)$ by
+**4. Estimate $\sigma^2(x)$ by**
 $$\hat{\sigma}^2(x) = e^{\hat{q}(x)}.$$
 
 ```{r}
