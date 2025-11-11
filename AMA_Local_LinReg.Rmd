@@ -13,14 +13,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Estimating the conditional variance by local linear regression
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Libraries
 library(sm)
 library(KernSmooth)
 source("locpolreg.R")
 ```
 
-## Aircraft Data
+## Aircraft Data and log transformation
 
 ```{r}
 # Load data
@@ -37,10 +37,23 @@ lgRange <- log(Range)
 
 ## Estimating the conditional variance
 
+Consider the heteroscedastic regression model
+$$ Y = m(x) + \sigma(x)\varepsilon = m(x) + \epsilon, $$
+where $\mathrm{E}(\varepsilon) = 0$, $\mathrm{Var}(\varepsilon) = 1$ and $\sigma^2(x)$ is an unknown function that gives the
+conditional variance of $Y$ given that the explanatory variable is equal to $x$.
+Let us define $Z = \log((Y-m(x))^2) = \log \epsilon^2$ and $\delta = \log \varepsilon^2$. Then
+$$ Z = \log \sigma^2(x) + \delta, $$
+and $\delta = \log \varepsilon^2$ is a random variable with expected value close to $0$ (observe that
+$\mathrm{E}(\log \varepsilon^2)$ is close to $\log \mathrm{E}(\varepsilon^2) = \log \mathrm{Var}(\varepsilon) = \log 1 = 0$, at least when $\mathrm{Var}(\varepsilon^2)$ is
+small) taking the role of \textit{noise} in the regression of $Z$ against $x$ (that is, $Z$ is the
+response variable and $x$ is the predicting variable).
 
-### With function loc.pol.reg
+Given that the values of $\varepsilon_i^2$ are not observable, a way to estimate the function
+$\sigma^2(x)$ is as follows: 
 
-1. Fit a nonparametric regression to data $(x_i, y_i)$ and save the estimated values $\hat{m}(x_i)$.
+### Part 1 - With function loc.pol.reg
+
+**1. Fit a nonparametric regression to data $(x_i, y_i)$ and save the estimated values $\hat{m}(x_i)$.**
 
 ```{r}
 ## Function in ATENEA to get loo-cv
@@ -63,28 +76,90 @@ h.cv.gcv <- function(x,y,h.v = exp(seq(log(diff(range(x))/20),
   }
   return(list(h.v=h.v,cv=cv,gcv=gcv))
 }
-```
 
-```{r}
 cv.res <- h.cv.gcv(Yr, lgWeight, type.kernel="normal")
-
-# Plot CV curve
-plot(cv.res$h.v, cv.res$cv, type="b", log="x", main="LOOCV", xlab="h", ylab="CV error")
-
-# Optimal h
 h_cv <- cv.res$h.v[which.min(cv.res$cv)]
-h_cv
+min_cv_error <- min(cv.res$cv)
 ```
 
 
+
+```{r echo=FALSE}
+# Plot CV curve
+# plot(cv.res$h.v, cv.res$cv, type="b", log="x", main="LOOCV", xlab="h", ylab="CV error")
+```
+
+# Bandwidth Selection via Leave-One-Out Cross-Validation
+```{r echo=FALSE, warning=FALSE}
+
+library(ggplot2)
+
+
+# 1. Put your results into a data frame
+cv_data <- data.frame(
+  h = cv.res$h.v,
+  cv_error = cv.res$cv
+)
+
+# 2. Create the ggplot
+ggplot(cv_data, aes(x = h, y = cv_error)) +
+  geom_line(color = "gray50") +  # The CV error curve
+  geom_point(color = "gray50") + # The points on the curve
+  
+  
+  # 3. Add a vertical line for the optimal h
+  geom_vline(xintercept = h_cv, 
+             linetype = "dashed", 
+             color = "red", 
+             linewidth = 1) +
+             
+  # 4. Add a point to highlight the minimum
+  geom_point(aes(x = h_cv, y = min_cv_error), 
+             color = "red", 
+             size = 3) +
+  
+  # 5. Use a log scale for the x-axis
+  scale_x_log10(breaks = scales::trans_breaks("log10", function(x) 10^x),
+                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+  
+  # 6. Add annotation for the optimal h
+  annotate(
+    "text",
+    x = h_cv,
+    y = min_cv_error + 0.05 * min_cv_error, # Position text slightly above the point
+    label = paste("Optimal h =", round(h_cv, 4)),
+    color = "red",
+    hjust = -0.1 # Justify text to the right of the line
+  ) +
+  
+  # 7. Add professional labels and theme
+  labs(
+    title = "Bandwidth Selection via Leave-One-Out Cross-Validation",
+    x = "Bandwidth (h) on log scale",
+    y = "Cross-Validation Error"
+  ) +
+  theme_bw() + # A clean, professional theme
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r echo=FALSE, results='asis'}
+result_string <- sprintf("The optimal bandwidth selected by LOOCV is h = %.4f.", h_cv)
+cat(result_string)
+```
+
+**$\hat{m}(x_i)$**
 ```{r}
 m_hat <- locpolreg(Yr, lgWeight, h=h_cv, q=1, tg=seq(min(Yr),max(Yr),length=200))
 ```
 
-2. Transform the estimated residuals $\hat{\epsilon} = y_i - \hat{m} (x_i)$:
+This plot displays the local linear regression fit (solid black line) over the raw data (grey circles). The smooth curve effectively captures the non-linear trend in the data.
+
+
+**2. Transform the estimated residuals $\hat{\epsilon} = y_i - \hat{m} (x_i)$:**
 $$z_i = log(\epsilon^2_i) = log((y_i - \hat{m} (x_i))^2).$$
 
-```{r}
+```{r results='hide'}
 eps_hat <- lgWeight - locpolreg(Yr, lgWeight, h=h_cv, q=1, r=0, tg=Yr)$mtgr
 z <- log(eps_hat^2)
 ```
@@ -102,6 +177,58 @@ plot(cv.res.var$h.v, cv.res.var$cv, type="b", log="x",
 # Optimal bandwidth for q-hat(x)
 h_cv2 <- cv.res.var$h.v[which.min(cv.res.var$cv)]
 h_cv2
+```
+
+
+```{r}
+
+cv.res.var <- h.cv.gcv(Yr, z, type.kernel="normal")
+h_cv2 <- cv.res.var$h.v[which.min(cv.res.var$cv)]
+min_cv_error_var <- min(cv.res.var$cv)
+
+# --- Set up plot parameters (optional) ---
+par(mar = c(5, 5, 3, 2), family = "serif")
+
+# --- Create the main plot ---
+plot(cv.res.var$h.v, cv.res.var$cv, 
+     type = "b",          # Both points and lines
+     log = "x",           # Logarithmic x-axis
+     main = "LOOCV for Variance Function (log(resid^2))",
+     xlab = "Bandwidth (h)",
+     ylab = "CV Error",
+     pch = 19,            # Use solid circles
+     col = "gray40")
+
+# --- Key Additions ---
+
+# 1. Add a vertical line at the optimal h
+abline(v = h_cv2, 
+       col = "red", 
+       lty = 2)           # Dashed line
+
+# 2. Add a horizontal line at the minimum CV error
+abline(h = min_cv_error_var, 
+       col = "blue", 
+       lty = 3)          # Dotted line
+
+# 3. Add a more visible point at the minimum
+points(h_cv2, min_cv_error_var, 
+       col = "red", 
+       pch = 19, 
+       cex = 1.5)         # Larger point
+
+# 4. Add a legend
+legend("topright", 
+       legend = c("CV Error Curve", 
+                  paste("Optimal h =", round(h_cv2, 3)),
+                  "Minimum CV Error"),
+       col = c("gray40", "red", "blue"),
+       lty = c(1, 2, 3),
+       pch = c(19, NA, NA),
+       bty = "n")         # No box
+
+# Reset plot parameters (optional)
+par(mar = c(5.1, 4.1, 4.1, 2.1), family = "")
 ```
 
 ```{r}
